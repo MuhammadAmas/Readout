@@ -60,6 +60,7 @@ enum SelfTest {
             checks.append(pasteboardRoundTrip())
             checks.append(contentsOf: await neuralChecks())
             checks.append(contentsOf: await speedChangeChecks())
+            checks.append(await panelStaysOnScreen())
 
             let voices = VoiceCatalog.options()
             let neural = voices.filter(\.isNeural).count
@@ -89,6 +90,29 @@ enum SelfTest {
             KokoroWorker.shared.shutDown(timeout: 3)
             exit(failed == 0 ? 0 : 1)
         }
+    }
+
+    private static func panelStaysOnScreen() async -> Check {
+        let margin = MiniPlayerView.outerPadding
+        let panel = FloatingPanel(size: NSSize(width: 428, height: 258), interactive: true)
+        panel.transparentMargin = margin
+        guard let screen = NSScreen.main else {
+            return Check(name: "Mini player stays on screen", passed: false, detail: "no screen")
+        }
+        let visible = screen.visibleFrame
+        panel.setFrameOrigin(NSPoint(x: visible.minX + 200, y: visible.minY + 200))
+        panel.alphaValue = 0
+        panel.orderFrontRegardless()
+        panel.setFrameOrigin(NSPoint(x: visible.maxX - 300, y: visible.minY - 120))
+        try? await Task.sleep(nanoseconds: 900_000_000)
+        let card = panel.frame.insetBy(dx: margin, dy: margin)
+        panel.orderOut(nil)
+        let inside = visible.contains(card)
+        return Check(
+            name: "Mini player stays on screen",
+            passed: inside,
+            detail: inside ? "moved past the bottom-right edge, settled back fully visible" : "still off screen at \(Int(card.minX)),\(Int(card.minY))"
+        )
     }
 
     private static func speedChangeChecks() async -> [Check] {

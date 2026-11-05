@@ -21,6 +21,7 @@ final class MiniPlayerController {
         if !NSScreen.screens.contains(where: { $0.visibleFrame.intersects(panel.frame) }) {
             placeAtDefaultPosition(panel)
         }
+        panel.moveOnScreen(animated: false)
         panel.orderFrontRegardless()
     }
 
@@ -32,6 +33,7 @@ final class MiniPlayerController {
         let hosting = NSHostingView(rootView: MiniPlayerView(model: model, queue: model.queue))
         let size = hosting.fittingSize
         let panel = FloatingPanel(size: size, interactive: true)
+        panel.transparentMargin = MiniPlayerView.outerPadding
         panel.contentView = hosting
         if panel.setFrameUsingName(Self.autosaveName) {
             let origin = panel.frame.origin
@@ -52,6 +54,8 @@ final class MiniPlayerController {
 }
 
 struct MiniPlayerView: View {
+    static let outerPadding: CGFloat = 14
+
     @ObservedObject var model: AppModel
     @ObservedObject var queue: ReadingQueue
     @AppStorage(Preferences.speechRate) private var rate = Preferences.Defaults.speechRate
@@ -75,7 +79,7 @@ struct MiniPlayerView: View {
         .frame(width: 400)
         .background(WindowDragArea())
         .floatingSurface(cornerRadius: 22)
-        .padding(14)
+        .padding(Self.outerPadding)
     }
 
     private var header: some View {

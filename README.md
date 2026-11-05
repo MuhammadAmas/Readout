@@ -249,3 +249,18 @@ open build/Readout.app --args --settings                    # opens Settings on 
   to compile. Readout also uses its own shortcut recorder instead of `KeyboardShortcuts.Recorder`.
   The package's localization bundle would have to sit at the root of the `.app`, which `codesign`
   rejects. Once Xcode is installed, both can be upgraded.
+
+## Licence
+
+Readout is released under the [MIT licence](LICENSE).
+
+It builds on other people's work, each under its own licence:
+
+- [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) and
+  [LaunchAtLogin-Modern](https://github.com/sindresorhus/LaunchAtLogin-Modern) (MIT): Swift
+  packages fetched at build time.
+- `Readout/Speech/CSherpaOnnx/include/sherpa-onnx-c-api.h`, from
+  [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Apache-2.0): included unchanged.
+- The neural voice download, which isn't part of this repository: the sherpa-onnx and ONNX Runtime
+  libraries (Apache-2.0 and MIT), the [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M)
+  model (Apache-2.0), and the espeak-ng pronunciation data bundled with it (GPL-3.0).

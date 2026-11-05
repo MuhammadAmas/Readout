@@ -24,20 +24,22 @@ final class NeuralSpeechEngine: SpeechEngine {
     private struct Playhead {
         let item: Item
         let piece: Int
-        var startedAt: Date
+        var segmentStart: Date
+        var audioElapsed: TimeInterval = 0
         var wordIndex = -1
     }
 
     private let worker = KokoroWorker.shared
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
+    private let timePitch = AVAudioUnitTimePitch()
+    private var playbackRate: Double = 1
     private var format: AVAudioFormat?
     private var items: [Item] = []
     private var playhead: Playhead?
     private var token = CancelToken()
     private var generation = 0
     private var isPaused = false
-    private var pausedAt: Date?
     private var highlightTimer: Timer?
     private var idleWork: DispatchWorkItem?
     private let audioQueue = DispatchQueue(label: "dev.readout.audio", qos: .userInitiated)
@@ -49,6 +51,7 @@ final class NeuralSpeechEngine: SpeechEngine {
 
     init() {
         engine.attach(player)
+        engine.attach(timePitch)
     }
 
     var isPlaying: Bool { player.isPlaying }
@@ -66,6 +69,9 @@ final class NeuralSpeechEngine: SpeechEngine {
     func speak(_ request: SpeechRequest) {
         guard let voice = request.settings.voiceIdentifier.flatMap(KokoroVoice.voice(identifier:)) else { return }
         let quickStart = items.isEmpty && playhead == nil
+        if quickStart {
+            setPlaybackRate(request.settings.rateMultiplier)
+        }
         let pieces = Self.pieces(of: request.text, quickStart: quickStart)
         let item = Item(request: request, pieces: pieces)
         items.append(item)
@@ -75,7 +81,7 @@ final class NeuralSpeechEngine: SpeechEngine {
         worker.render(
             pieces.map { text.substring(with: $0) },
             voice: voice,
-            speed: Float(request.settings.rateMultiplier),
+            speed: 1,
             token: token
         ) { [weak self] index, samples, sampleRate in
             DispatchQueue.main.async {
@@ -88,22 +94,38 @@ final class NeuralSpeechEngine: SpeechEngine {
 
     func pause() {
         guard !isPaused else { return }
+        settlePlayhead()
         isPaused = true
-        pausedAt = Date()
         player.pause()
     }
 
     func resume() {
         guard isPaused else { return }
         isPaused = false
-        if let pausedAt, var playhead {
-            playhead.startedAt += Date().timeIntervalSince(pausedAt)
-            self.playhead = playhead
-        }
-        pausedAt = nil
+        playhead?.segmentStart = Date()
         if engine.isRunning {
             player.play()
         }
+    }
+
+    func changeRate(to multiplier: Double) -> Bool {
+        settlePlayhead()
+        setPlaybackRate(multiplier)
+        return true
+    }
+
+    private func setPlaybackRate(_ multiplier: Double) {
+        let clamped = min(max(multiplier, SpeechVoiceSettings.rateRange.lowerBound), SpeechVoiceSettings.rateRange.upperBound)
+        playbackRate = clamped
+        timePitch.rate = Float(clamped)
+    }
+
+    private func settlePlayhead() {
+        guard var playhead, !isPaused else { return }
+        let now = Date()
+        playhead.audioElapsed += now.timeIntervalSince(playhead.segmentStart) * playbackRate
+        playhead.segmentStart = now
+        self.playhead = playhead
     }
 
     func stop() {
@@ -113,7 +135,6 @@ final class NeuralSpeechEngine: SpeechEngine {
         items.removeAll()
         playhead = nil
         isPaused = false
-        pausedAt = nil
         player.stop()
         stopHighlighting()
         scheduleIdle()
@@ -186,7 +207,7 @@ final class NeuralSpeechEngine: SpeechEngine {
     }
 
     private func begin(piece: Int, of item: Item) {
-        playhead = Playhead(item: item, piece: piece, startedAt: Date())
+        playhead = Playhead(item: item, piece: piece, segmentStart: Date())
         if !item.started {
             item.started = true
             delegate?.speechEngine(self, didStart: item.request)
@@ -212,7 +233,8 @@ final class NeuralSpeechEngine: SpeechEngine {
         let request = playhead.item.request
         let words = Self.words(in: request.text, range: playhead.item.pieces[playhead.piece])
         guard !words.isEmpty else { return }
-        let progress = min(max(Date().timeIntervalSince(playhead.startedAt) / duration, 0), 0.999)
+        let position = playhead.audioElapsed + Date().timeIntervalSince(playhead.segmentStart) * playbackRate
+        let progress = min(max(position / duration, 0), 0.999)
         let index = Int(progress * Double(words.count))
         guard index != playhead.wordIndex else { return }
         playhead.wordIndex = index
@@ -245,10 +267,13 @@ final class NeuralSpeechEngine: SpeechEngine {
         let setup = audioSetup
         let engine = engine
         let player = player
+        let timePitch = timePitch
         audioQueue.async { [weak self] in
             let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)
             engine.disconnectNodeOutput(player)
-            engine.connect(player, to: engine.mainMixerNode, format: format)
+            engine.disconnectNodeOutput(timePitch)
+            engine.connect(player, to: timePitch, format: format)
+            engine.connect(timePitch, to: engine.mainMixerNode, format: format)
             var started = engine.isRunning
             if !started {
                 engine.prepare()

@@ -59,6 +59,7 @@ enum SelfTest {
 
             checks.append(pasteboardRoundTrip())
             checks.append(contentsOf: await neuralChecks())
+            checks.append(contentsOf: await speedChangeChecks())
 
             let voices = VoiceCatalog.options()
             let neural = voices.filter(\.isNeural).count
@@ -88,6 +89,50 @@ enum SelfTest {
             KokoroWorker.shared.shutDown(timeout: 3)
             exit(failed == 0 ? 0 : 1)
         }
+    }
+
+    private static func speedChangeChecks() async -> [Check] {
+        let sentence = "Changing the speed in the middle of this rather long sentence should carry on from the word being spoken, not jump back to the very beginning and start reading it all over again from scratch."
+        var engines: [(String, any SpeechEngine, String?)] = [
+            ("system voice", SystemSpeechEngine(), AVSpeechSynthesisVoice(language: AVSpeechSynthesisVoice.currentLanguageCode())?.identifier),
+        ]
+        if NeuralVoiceInstallation.isInstalled, let heart = KokoroVoice.voice(identifier: "kokoro:af_heart") {
+            let neural = NeuralSpeechEngine()
+            neural.prepare(heart)
+            engines.append(("neural voice", neural, heart.identifier))
+        }
+        var checks: [Check] = []
+        for (name, engine, voice) in engines {
+            let queue = ReadingQueue(engine: engine, lookahead: 1)
+            queue.start([sentence], settings: SpeechVoiceSettings(voiceIdentifier: voice, volume: 0))
+            let reached = Date().addingTimeInterval(8)
+            while (queue.spokenRange?.location ?? 0) < 40, Date() < reached {
+                try? await Task.sleep(nanoseconds: 20_000_000)
+            }
+            let before = queue.spokenRange?.location ?? 0
+            queue.update(settings: SpeechVoiceSettings(voiceIdentifier: voice, rateMultiplier: 1.5, volume: 0))
+            let lowest = await lowestPosition(of: queue, for: 1.2)
+            let after = queue.spokenRange?.location ?? 0
+            queue.stop()
+            checks.append(Check(
+                name: "Speed change mid-sentence (\(name))",
+                passed: before >= 40 && lowest >= before - 1 && after > before,
+                detail: before < 40 ? "never got far enough into the sentence" : "at character \(before) when changed to 1.5×, never went back before \(lowest), reached \(after)"
+            ))
+        }
+        return checks
+    }
+
+    private static func lowestPosition(of queue: ReadingQueue, for duration: TimeInterval) async -> Int {
+        var lowest = Int.max
+        let end = Date().addingTimeInterval(duration)
+        while Date() < end {
+            if let location = queue.spokenRange?.location {
+                lowest = min(lowest, location)
+            }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return lowest == Int.max ? 0 : lowest
     }
 
     private static func neuralChecks() async -> [Check] {

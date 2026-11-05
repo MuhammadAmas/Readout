@@ -18,12 +18,14 @@ public struct SpeechRequest: Equatable, Sendable {
     public let id: Int
     public let sentenceIndex: Int
     public let text: String
+    public let textOffset: Int
     public let settings: SpeechVoiceSettings
 
-    public init(id: Int, sentenceIndex: Int, text: String, settings: SpeechVoiceSettings) {
+    public init(id: Int, sentenceIndex: Int, text: String, textOffset: Int = 0, settings: SpeechVoiceSettings) {
         self.id = id
         self.sentenceIndex = sentenceIndex
         self.text = text
+        self.textOffset = textOffset
         self.settings = settings
     }
 }
@@ -35,6 +37,11 @@ public protocol SpeechEngine: AnyObject {
     func pause()
     func resume()
     func stop()
+    func changeRate(to multiplier: Double) -> Bool
+}
+
+public extension SpeechEngine {
+    func changeRate(to multiplier: Double) -> Bool { false }
 }
 
 @MainActor

@@ -9,11 +9,19 @@ final class FakeEngine: SpeechEngine {
     private(set) var stopCount = 0
     private(set) var pauseCount = 0
     private(set) var resumeCount = 0
+    private(set) var rateChanges: [Double] = []
+    var changesRateLive = false
 
     func speak(_ request: SpeechRequest) { spoken.append(request) }
     func pause() { pauseCount += 1 }
     func resume() { resumeCount += 1 }
     func stop() { stopCount += 1 }
+
+    func changeRate(to multiplier: Double) -> Bool {
+        guard changesRateLive else { return false }
+        rateChanges.append(multiplier)
+        return true
+    }
 
     func start(_ request: SpeechRequest) { delegate?.speechEngine(self, didStart: request) }
     func word(_ range: NSRange, in request: SpeechRequest) { delegate?.speechEngine(self, willSpeak: range, of: request) }
@@ -154,7 +162,30 @@ struct ReadingQueueTests {
         #expect(engine.pauseCount == 0)
     }
 
-    @Test func changingSpeedRestartsTheCurrentSentence() {
+    @Test func changingSpeedRestartsAtTheCurrentWordWhenTheEngineCannotChangeLive() {
+        let engine = FakeEngine()
+        let queue = ReadingQueue(engine: engine)
+        queue.start(["The first sentence is here.", "Then the second."], settings: SpeechVoiceSettings(rateMultiplier: 1))
+        let first = engine.spoken[0]
+        engine.start(first)
+        engine.word(NSRange(location: 10, length: 8), in: first)
+        queue.update(settings: SpeechVoiceSettings(rateMultiplier: 1.5))
+
+        let restarted = engine.spoken.suffix(2)
+        #expect(restarted.map(\.text) == ["sentence is here.", "Then the second."])
+        #expect(restarted.map(\.textOffset) == [10, 0])
+        #expect(restarted.allSatisfy { $0.settings.rateMultiplier == 1.5 })
+        #expect(queue.currentIndex == 0)
+        #expect(queue.spokenRange == NSRange(location: 10, length: 8))
+
+        let resumed = restarted.first!
+        engine.start(resumed)
+        #expect(queue.spokenRange == NSRange(location: 10, length: 8))
+        engine.word(NSRange(location: 9, length: 2), in: resumed)
+        #expect(queue.spokenRange == NSRange(location: 19, length: 2))
+    }
+
+    @Test func changingSpeedBeforeAnyWordRestartsTheSentence() {
         let engine = FakeEngine()
         let queue = ReadingQueue(engine: engine)
         queue.start(sentences, settings: SpeechVoiceSettings(rateMultiplier: 1))
@@ -163,21 +194,70 @@ struct ReadingQueueTests {
         queue.update(settings: SpeechVoiceSettings(rateMultiplier: 1.5))
         let restarted = engine.spoken.suffix(2)
         #expect(restarted.map(\.text) == ["Two.", "Three."])
-        #expect(restarted.allSatisfy { $0.settings.rateMultiplier == 1.5 })
+        #expect(restarted.allSatisfy { $0.textOffset == 0 && $0.settings.rateMultiplier == 1.5 })
     }
 
-    @Test func speedChangeWhilePausedAppliesOnResume() {
+    @Test func liveSpeedChangesDoNotRestartAnything() {
+        let engine = FakeEngine()
+        engine.changesRateLive = true
+        let queue = ReadingQueue(engine: engine)
+        queue.start(sentences, settings: SpeechVoiceSettings(rateMultiplier: 1))
+        engine.start(engine.spoken[0])
+        engine.word(NSRange(location: 0, length: 3), in: engine.spoken[0])
+        let stops = engine.stopCount
+        let spoken = engine.spoken.count
+        queue.update(settings: SpeechVoiceSettings(rateMultiplier: 1.75))
+        #expect(engine.rateChanges == [1.75])
+        #expect(engine.stopCount == stops)
+        #expect(engine.spoken.count == spoken)
+        #expect(queue.state == .speaking)
+        #expect(queue.currentSettings.rateMultiplier == 1.75)
+        engine.play(engine.spoken[0])
+        #expect(engine.spoken.last?.settings.rateMultiplier == 1.75)
+    }
+
+    @Test func changingVoiceRestartsAtTheCurrentWordEvenWithLiveRate() {
+        let engine = FakeEngine()
+        engine.changesRateLive = true
+        let queue = ReadingQueue(engine: engine)
+        queue.start(["Alpha beta gamma."], settings: SpeechVoiceSettings(voiceIdentifier: "a"))
+        engine.start(engine.spoken[0])
+        engine.word(NSRange(location: 6, length: 4), in: engine.spoken[0])
+        queue.update(settings: SpeechVoiceSettings(voiceIdentifier: "b"))
+        #expect(engine.rateChanges.isEmpty)
+        #expect(engine.spoken.last?.text == "beta gamma.")
+        #expect(engine.spoken.last?.settings.voiceIdentifier == "b")
+    }
+
+    @Test func speedChangeWhilePausedContinuesFromTheCurrentWordOnResume() {
         let engine = FakeEngine()
         let queue = ReadingQueue(engine: engine)
-        queue.start(sentences, settings: SpeechVoiceSettings())
+        queue.start(["One two three four."], settings: SpeechVoiceSettings())
+        engine.start(engine.spoken[0])
+        engine.word(NSRange(location: 8, length: 5), in: engine.spoken[0])
         queue.pause()
         let queued = engine.spoken.count
         queue.update(settings: SpeechVoiceSettings(rateMultiplier: 2))
         #expect(engine.spoken.count == queued)
         queue.resume()
         #expect(engine.resumeCount == 0)
+        #expect(engine.spoken.last?.text == "three four.")
         #expect(engine.spoken.last?.settings.rateMultiplier == 2)
         #expect(queue.state == .speaking)
+    }
+
+    @Test func liveSpeedChangeWhilePausedJustResumes() {
+        let engine = FakeEngine()
+        engine.changesRateLive = true
+        let queue = ReadingQueue(engine: engine)
+        queue.start(sentences, settings: SpeechVoiceSettings())
+        queue.pause()
+        let spoken = engine.spoken.count
+        queue.update(settings: SpeechVoiceSettings(rateMultiplier: 0.75))
+        queue.resume()
+        #expect(engine.resumeCount == 1)
+        #expect(engine.spoken.count == spoken)
+        #expect(engine.rateChanges == [0.75])
     }
 
     @Test func wordRangesAreTrackedForTheCurrentSentence() {

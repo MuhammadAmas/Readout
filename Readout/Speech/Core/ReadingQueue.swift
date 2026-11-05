@@ -23,6 +23,7 @@ public final class ReadingQueue: ObservableObject {
     private var nextIndex = 0
     private var nextRequestID = 0
     private var settingsChangedWhilePaused = false
+    private var startOffset = 0
 
     public init(engine: any SpeechEngine, lookahead: Int = 2) {
         self.engine = engine
@@ -72,7 +73,7 @@ public final class ReadingQueue: ObservableObject {
     public func resume() {
         guard state == .paused else { return }
         if settingsChangedWhilePaused {
-            play(from: currentIndex)
+            continueFromCurrentWord()
         } else {
             engine.resume()
             state = .speaking
@@ -96,31 +97,52 @@ public final class ReadingQueue: ObservableObject {
 
     public func update(settings newSettings: SpeechVoiceSettings) {
         guard newSettings != settings else { return }
+        let onlyRateChanged = newSettings.voiceIdentifier == settings.voiceIdentifier
+            && newSettings.volume == settings.volume
         settings = newSettings
+        guard state != .idle else { return }
+        if onlyRateChanged, engine.changeRate(to: newSettings.rateMultiplier) { return }
         switch state {
-        case .speaking: play(from: currentIndex)
+        case .speaking: continueFromCurrentWord()
         case .paused: settingsChangedWhilePaused = true
         case .idle: break
         }
     }
 
-    private func play(from index: Int) {
+    private func continueFromCurrentWord() {
+        var offset = 0
+        if let range = spokenRange, let sentence = currentSentence, range.location < (sentence as NSString).length {
+            offset = range.location
+        }
+        play(from: currentIndex, characterOffset: offset)
+    }
+
+    private func play(from index: Int, characterOffset: Int = 0) {
         engine.stop()
         pending.removeAll()
         settingsChangedWhilePaused = false
         currentIndex = index
         nextIndex = index
-        spokenRange = nil
+        startOffset = characterOffset
+        if characterOffset == 0 {
+            spokenRange = nil
+        }
         state = .speaking
         fill()
     }
 
     private func fill() {
         while pending.count < lookahead, nextIndex < sentences.count {
+            let sentence = sentences[nextIndex] as NSString
+            let offset = nextIndex == currentIndex ? min(startOffset, sentence.length) : 0
+            if nextIndex == currentIndex {
+                startOffset = 0
+            }
             let request = SpeechRequest(
                 id: nextRequestID,
                 sentenceIndex: nextIndex,
-                text: sentences[nextIndex],
+                text: sentence.substring(from: offset),
+                textOffset: offset,
                 settings: settings
             )
             nextRequestID += 1
@@ -138,6 +160,7 @@ public final class ReadingQueue: ObservableObject {
         nextIndex = 0
         spokenRange = nil
         settingsChangedWhilePaused = false
+        startOffset = 0
         onFinish?()
     }
 }
@@ -146,14 +169,16 @@ extension ReadingQueue: SpeechEngineDelegate {
     public func speechEngine(_ engine: any SpeechEngine, didStart request: SpeechRequest) {
         guard pending.contains(where: { $0.id == request.id }) else { return }
         currentIndex = request.sentenceIndex
-        spokenRange = nil
+        if request.textOffset == 0 {
+            spokenRange = nil
+        }
     }
 
     public func speechEngine(_ engine: any SpeechEngine, willSpeak range: NSRange, of request: SpeechRequest) {
         guard request.sentenceIndex == currentIndex,
               pending.contains(where: { $0.id == request.id })
         else { return }
-        spokenRange = range
+        spokenRange = NSRange(location: range.location + request.textOffset, length: range.length)
     }
 
     public func speechEngine(_ engine: any SpeechEngine, didFinish request: SpeechRequest) {

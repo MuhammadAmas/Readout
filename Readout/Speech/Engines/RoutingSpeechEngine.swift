@@ -7,6 +7,7 @@ final class RoutingSpeechEngine: SpeechEngine, SpeechEngineDelegate {
 
     private let system = SystemSpeechEngine()
     private var neural: NeuralSpeechEngine?
+    private weak var active: (any SpeechEngine)?
 
     init() {
         system.delegate = self
@@ -23,10 +24,17 @@ final class RoutingSpeechEngine: SpeechEngine, SpeechEngineDelegate {
         if let identifier = request.settings.voiceIdentifier,
            KokoroVoice.voice(identifier: identifier) != nil,
            NeuralVoiceInstallation.isInstalled {
-            neuralEngine().speak(request)
+            let engine = neuralEngine()
+            active = engine
+            engine.speak(request)
         } else {
+            active = system
             system.speak(request)
         }
+    }
+
+    func changeRate(to multiplier: Double) -> Bool {
+        active?.changeRate(to: multiplier) ?? false
     }
 
     func pause() {

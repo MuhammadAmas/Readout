@@ -149,8 +149,9 @@ voices first. ★ marks languages that have a Premium or Enhanced voice.
 - **Automatic** uses the best installed voice for your system language.
 - **Switch voice when the text is in another language** detects the selection's language and
   uses the best voice installed for it.
-- **Speed** goes from 0.5× to 2×. **Preview** plays a sample. If you change the speed while
-  Readout is reading, the current sentence restarts at the new speed.
+- **Speed** goes from 0.5× to 2×. **Preview** plays a sample. Changing the speed while Readout is
+  reading takes effect immediately and carries on from where it is: neural voices change speed
+  mid-word, and system voices pick up again at the word being spoken.
 
 The voices macOS ships by default are basic. For much more natural speech (still offline), go
 to **System Settings › Accessibility › Spoken Content › System Voice › Manage Voices…** and
@@ -295,7 +296,8 @@ READOUT_UPDATE_FEED="file:///path/latest.json" /Applications/Readout.app/Content
 - **Licences:** Kokoro and sherpa-onnx are Apache-2.0. The espeak-ng pronunciation data in the
   model package is GPL-3.0. That's fine for personal use; check the terms before you
   redistribute Readout together with the model.
-- **Speed changes** restart the current sentence rather than changing speed mid-sentence.
+- **Speed changes with system voices** restart at the word being spoken, because macOS can't
+  change a system voice's speed in the middle of a sentence. Neural voices change speed seamlessly.
 - **Signing:** the local certificate is for your own Mac. Gatekeeper will block Readout on other
   Macs unless it's signed with a Developer ID and notarized.
 - **KeyboardShortcuts is pinned to 1.15.0.** Later versions use `#Preview`, which needs full Xcode

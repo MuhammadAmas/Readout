@@ -2,7 +2,11 @@ import Foundation
 
 enum NeuralVoiceInstallation {
     static let modelName = "kokoro-multi-lang-v1_0"
-    static let fetchScript = "scripts/fetch-neural-voice.sh"
+    static var installCommand: String {
+        let script = Bundle.main.url(forResource: "fetch-neural-voice", withExtension: "sh")?.path
+            ?? "scripts/fetch-neural-voice.sh"
+        return "bash '\(script)'"
+    }
 
     static var directory: URL {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]

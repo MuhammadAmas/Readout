@@ -7,7 +7,37 @@ import SwiftUI
 
 @MainActor
 final class SettingsWindowController {
+    enum Pane: String, CaseIterable {
+        case general, voice, text
+
+        var title: String {
+            switch self {
+            case .general: "General"
+            case .voice: "Voice"
+            case .text: "Text"
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .general: "gearshape"
+            case .voice: "waveform"
+            case .text: "text.alignleft"
+            }
+        }
+
+        @MainActor
+        func content(model: AppModel) -> AnyView {
+            switch self {
+            case .general: AnyView(GeneralSettings(model: model).settingsPane())
+            case .voice: AnyView(VoiceSettings(model: model).settingsPane())
+            case .text: AnyView(TextSettings().settingsPane())
+            }
+        }
+    }
+
     static let shared = SettingsWindowController()
+    static let selectedPaneKey = "settingsTab"
 
     private var window: NSWindow?
 
@@ -19,46 +49,45 @@ final class SettingsWindowController {
     }
 
     private func makeWindow(model: AppModel) -> NSWindow {
-        let hosting = NSHostingView(rootView: SettingsView(model: model))
-        hosting.sizingOptions = [.intrinsicContentSize]
-        let window = NSWindow(
-            contentRect: NSRect(origin: .zero, size: hosting.fittingSize),
-            styleMask: [.titled, .closable, .miniaturizable],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = "Readout Settings"
+        let tabs = SettingsTabViewController()
+        tabs.tabStyle = .toolbar
+        tabs.canPropagateSelectedChildViewControllerTitle = true
+        for pane in Pane.allCases {
+            let controller = NSHostingController(rootView: pane.content(model: model))
+            controller.sizingOptions = .preferredContentSize
+            controller.title = pane.title
+            let item = NSTabViewItem(viewController: controller)
+            item.label = pane.title
+            item.image = NSImage(systemSymbolName: pane.symbol, accessibilityDescription: pane.title)
+            item.identifier = pane.rawValue
+            tabs.addTabViewItem(item)
+        }
+        let saved = UserDefaults.standard.string(forKey: Self.selectedPaneKey)
+        tabs.selectedTabViewItemIndex = Pane.allCases.firstIndex { $0.rawValue == saved } ?? 0
+
+        let window = NSWindow(contentViewController: tabs)
+        window.styleMask = [.titled, .closable]
+        window.toolbarStyle = .preference
         window.isReleasedWhenClosed = false
-        window.contentView = hosting
         window.center()
-        window.setFrameAutosaveName("ReadoutSettings")
         return window
     }
 }
 
-struct SettingsView: View {
-    enum Tab: String {
-        case general, voice, text
-    }
-
-    @ObservedObject var model: AppModel
-    @AppStorage("settingsTab") private var tab = Tab.general
-
-    var body: some View {
-        TabView(selection: $tab) {
-            GeneralSettings(model: model)
-                .tabItem { Label("General", systemImage: "gearshape") }
-                .tag(Tab.general)
-            VoiceSettings(model: model)
-                .tabItem { Label("Voice", systemImage: "waveform") }
-                .tag(Tab.voice)
-            TextSettings()
-                .tabItem { Label("Text", systemImage: "text.alignleft") }
-                .tag(Tab.text)
+final class SettingsTabViewController: NSTabViewController {
+    override func tabView(_ tabView: NSTabView, didSelect tabViewItem: NSTabViewItem?) {
+        super.tabView(tabView, didSelect: tabViewItem)
+        if let identifier = tabViewItem?.identifier as? String {
+            UserDefaults.standard.set(identifier, forKey: SettingsWindowController.selectedPaneKey)
         }
-        .padding(.top, 8)
-        .frame(width: 560)
-        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private extension View {
+    func settingsPane() -> some View {
+        formStyle(.grouped)
+            .frame(width: 520)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -69,43 +98,46 @@ private struct GeneralSettings: View {
     var body: some View {
         Form {
             Section("Shortcuts") {
-                LabeledContent("Read selection / stop") {
+                LabeledContent("Read or stop") {
                     ShortcutRecorder(name: .readSelection, others: [.pauseResume])
                 }
-                LabeledContent("Pause / resume") {
+                LabeledContent("Pause or resume") {
                     ShortcutRecorder(name: .pauseResume, others: [.readSelection])
                 }
             }
 
-            Section("Behaviour") {
-                LaunchAtLogin.Toggle("Launch at login")
-                Toggle("Show the mini player while reading", isOn: $showMiniPlayer)
-            }
-
-            Section("Accessibility access") {
-                HStack {
-                    if model.isTrusted {
-                        Label("Granted", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                    } else {
-                        Label("Not granted", systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                    }
-                    Spacer()
-                    Button("Open Accessibility Settings") {
-                        AccessibilityPermission.requestPrompt()
-                        AccessibilityPermission.openSystemSettings()
-                    }
-                }
+            Section {
+                Toggle("Show mini player while reading", isOn: $showMiniPlayer)
+                LaunchAtLogin.Toggle("Open at login")
             }
 
             Section {
-                Text("Readout runs entirely on this Mac. It makes no network requests, collects no analytics, and never stores what it reads.")
+                HStack(spacing: 10) {
+                    Image(systemName: model.isTrusted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .font(.title2)
+                        .foregroundStyle(model.isTrusted ? .green : .orange)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(model.isTrusted ? "Accessibility access allowed" : "Accessibility access needed")
+                        Text(model.isTrusted ? "Readout can read text you select in other apps." : "Without it, Readout can't see what you've selected.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if !model.isTrusted {
+                        Button("Open Settings") {
+                            AccessibilityPermission.requestPrompt()
+                            AccessibilityPermission.openSystemSettings()
+                        }
+                    }
+                }
+            } footer: {
+                Text("Readout works entirely on this Mac. It makes no network requests, collects no analytics and keeps nothing it reads.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .formStyle(.grouped)
         .onAppear(perform: model.refreshTrust)
     }
 }
@@ -172,34 +204,37 @@ private struct VoiceSettings: View {
                 }
             }
 
-            Section("Neural voices") {
+            Section {
                 if NeuralVoiceInstallation.isInstalled {
-                    Label("Kokoro is installed: \(KokoroVoice.all.count) natural-sounding English voices, generated on this Mac.", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text("Pick one under Language › English. The first sentence takes about half a second longer to start than a system voice. Text in other languages still uses the system voices.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    LabeledContent {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    } label: {
+                        Text("Neural voices")
+                        Text("\(KokoroVoice.all.count) natural English voices from Kokoro, made on this Mac. They take about half a second longer to start.")
+                    }
                 } else {
-                    Text("Kokoro adds very natural English voices that run entirely on this Mac. Install them once by running \(NeuralVoiceInstallation.fetchScript) from the Readout folder (about 360 MB), then reopen this window.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    LabeledContent {
+                        Button("Copy Command") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(NeuralVoiceInstallation.installCommand, forType: .string)
+                        }
+                    } label: {
+                        Text("Neural voices")
+                        Text("Add 27 very natural English voices that run offline (a one-time 360 MB download). Paste the command into Terminal, then reopen Settings.")
+                    }
                 }
-            }
-
-            Section("Better system voices") {
-                Text("Premium and Enhanced voices sound far more natural and work offline. Download them in System Settings › Accessibility › Spoken Content › System Voice › Manage Voices… They appear here as soon as they finish downloading. ★ marks languages that have one.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button("Open Spoken Content Settings") {
-                    AccessibilityPermission.openSpokenContentSettings()
+                LabeledContent {
+                    Button("Open Spoken Content") {
+                        AccessibilityPermission.openSpokenContentSettings()
+                    }
+                } label: {
+                    Text("System voices")
+                    Text("Download Premium or Enhanced voices under Spoken Content › Manage Voices. ★ marks languages that have one.")
                 }
+            } header: {
+                Text("More voices")
             }
         }
-        .formStyle(.grouped)
         .onAppear(perform: reload)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             reload()
@@ -269,7 +304,7 @@ private struct TextSettings: View {
             Section("Try it") {
                 TextEditor(text: $sample)
                     .font(.system(.callout, design: .monospaced))
-                    .frame(height: 130)
+                    .frame(height: 160)
                     .scrollContentBackground(.hidden)
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Readout will say:")
@@ -281,7 +316,6 @@ private struct TextSettings: View {
                 }
             }
         }
-        .formStyle(.grouped)
     }
 
     private var spoken: String {

@@ -50,9 +50,8 @@ struct HUDView: View {
             .font(.system(size: 15, weight: .medium))
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
-            .background(.regularMaterial, in: Capsule())
-            .overlay(Capsule().strokeBorder(.quaternary, lineWidth: 0.5))
-            .padding(8)
+            .floatingSurface(cornerRadius: 24)
+            .padding(12)
             .accessibilityElement(children: .combine)
     }
 }

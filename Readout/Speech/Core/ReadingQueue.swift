@@ -89,6 +89,11 @@ public final class ReadingQueue: ObservableObject {
         play(from: max(0, target))
     }
 
+    public func jump(to index: Int) {
+        guard state != .idle, sentences.indices.contains(index) else { return }
+        play(from: index)
+    }
+
     public func update(settings newSettings: SpeechVoiceSettings) {
         guard newSettings != settings else { return }
         settings = newSettings

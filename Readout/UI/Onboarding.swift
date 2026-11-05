@@ -23,104 +23,155 @@ final class OnboardingWindowController {
             UserDefaults.standard.set(true, forKey: Preferences.hasCompletedOnboarding)
             self?.close()
         }
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 520),
-            styleMask: [.titled, .closable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
+        let controller = NSHostingController(rootView: view)
+        controller.sizingOptions = .preferredContentSize
+        let window = NSWindow(contentViewController: controller)
+        window.styleMask = [.titled, .closable, .fullSizeContentView]
         window.title = "Welcome to Readout"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
+        window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: view)
         window.center()
         return window
     }
 }
 
 struct OnboardingView: View {
+    static let sample = "Readout turns any text you select into speech, right here on your Mac, without sending a word anywhere."
+
     @ObservedObject var model: AppModel
     let onDone: () -> Void
 
-    var body: some View {
-        VStack(spacing: 18) {
-            Image(systemName: "text.bubble.fill")
-                .font(.system(size: 52))
-                .foregroundStyle(.tint)
-                .padding(.top, 8)
+    @State private var showsStaleHint = false
 
+    var body: some View {
+        VStack(spacing: 22) {
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: 72, height: 72)
+                .accessibilityHidden(true)
+
+            if model.isTrusted {
+                ready
+            } else {
+                permission
+            }
+        }
+        .padding(.horizontal, 36)
+        .padding(.top, 34)
+        .padding(.bottom, 26)
+        .frame(width: 480)
+        .animation(.smooth(duration: 0.3), value: model.isTrusted)
+    }
+
+    private var permission: some View {
+        VStack(spacing: 22) {
             VStack(spacing: 6) {
-                Text("Readout reads selected text aloud")
-                    .font(.title2.weight(.semibold))
-                Text("Select text in any app and press \(Hotkeys.label(for: .readSelection)). Press it again to stop, or \(Hotkeys.label(for: .pauseResume)) to pause.")
+                Text("Welcome to Readout")
+                    .font(.title.weight(.semibold))
+                Text("Select text in any app, press \(Hotkeys.label(for: .readSelection)), and hear it read aloud.")
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            VStack(alignment: .leading, spacing: 10) {
-                Label("Readout needs Accessibility access", systemImage: "hand.raised.fill")
-                    .font(.headline)
-                Text("macOS only lets an app see what you've selected in another app if you allow it. Where an app doesn't share its selection (most browsers and Electron apps), Readout presses ⌘C for you, then puts your clipboard back exactly as it was.")
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("Everything stays on this Mac. Readout makes no network requests.")
+            VStack(alignment: .leading, spacing: 12) {
+                Label {
+                    Text("Allow Accessibility access").font(.headline)
+                } icon: {
+                    Image(systemName: "hand.raised.fill").foregroundStyle(.tint)
+                }
+                Text("Readout needs it to see the text you select. In browsers and some other apps it copies the selection for a moment, then puts your clipboard back exactly as it was.")
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 6) {
                     step(1, "Click Open Accessibility Settings.")
-                    step(2, "Turn on Readout in the list. Unlock with your password if asked. If it's already on and this window still waits, select Readout, remove it with −, then click Open Accessibility Settings again. A rebuilt copy counts as a new app.")
-                    step(3, "Come back here. This window notices on its own.")
+                    step(2, "Turn on Readout. This window updates by itself.")
                 }
-                .padding(.top, 4)
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Waiting for access…").foregroundStyle(.secondary)
+                }
+                .font(.callout)
+                if showsStaleHint {
+                    Text("Readout already on? Select it, remove it with −, and turn it on again. macOS treats an updated copy as a new app.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .transition(.opacity)
+                }
             }
-            .padding(16)
+            .padding(18)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
-
-            status
+            .background(.quinary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
 
             HStack {
-                if model.isTrusted {
-                    Button("Start Using Readout", action: onDone)
-                        .keyboardShortcut(.defaultAction)
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                } else {
-                    Button("Later", action: onDone)
-                        .controlSize(.large)
-                    Button("Open Accessibility Settings") {
-                        AccessibilityPermission.requestPrompt()
-                        AccessibilityPermission.openSystemSettings()
-                    }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
+                Button("Not Now", action: onDone)
                     .controlSize(.large)
+                Spacer()
+                Button("Open Accessibility Settings") {
+                    AccessibilityPermission.requestPrompt()
+                    AccessibilityPermission.openSystemSettings()
                 }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .controlSize(.large)
             }
         }
-        .padding(28)
-        .frame(width: 520)
+        .task {
+            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            withAnimation { showsStaleHint = true }
+        }
     }
 
-    private var status: some View {
-        HStack(spacing: 8) {
-            if model.isTrusted {
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                Text("Access granted. You're ready.")
-            } else {
-                ProgressView().controlSize(.small)
-                Text("Waiting for permission…").foregroundStyle(.secondary)
+    private var ready: some View {
+        VStack(spacing: 22) {
+            VStack(spacing: 6) {
+                Text("You're all set")
+                    .font(.title.weight(.semibold))
+                Text("Try it now: select the sentence below and press \(Hotkeys.label(for: .readSelection)).")
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Text(Self.sample)
+                .font(.system(size: 15))
+                .lineSpacing(3)
+                .textSelection(.enabled)
+                .padding(18)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.quinary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("Press \(Hotkeys.label(for: .readSelection)) again to stop and \(Hotkeys.label(for: .pauseResume)) to pause. Shortcuts, voices and speed are in Settings.")
+                .font(.callout)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack {
+                Button("Read It to Me") { model.read(Self.sample) }
+                    .controlSize(.large)
+                Spacer()
+                Button("Done", action: onDone)
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                    .controlSize(.large)
             }
         }
-        .font(.callout.weight(.medium))
-        .animation(.default, value: model.isTrusted)
+        .transition(.opacity)
     }
 
     private func step(_ number: Int, _ text: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text("\(number).").monospacedDigit().foregroundStyle(.secondary)
+            Text("\(number)")
+                .font(.caption.weight(.bold))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+                .frame(width: 18, height: 18)
+                .background(Circle().fill(.tint))
             Text(text).fixedSize(horizontal: false, vertical: true)
         }
     }

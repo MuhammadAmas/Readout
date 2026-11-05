@@ -30,6 +30,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if arguments.contains("--settings") {
             model.showSettings()
+        } else if arguments.contains("--onboarding") {
+            model.showOnboarding()
         } else if !AccessibilityPermission.isTrusted || !UserDefaults.standard.bool(forKey: Preferences.hasCompletedOnboarding) {
             model.showOnboarding()
         }

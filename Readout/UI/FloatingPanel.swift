@@ -47,3 +47,32 @@ extension NSScreen {
         return screens.first { NSMouseInRect(location, $0.frame, false) } ?? main
     }
 }
+
+struct VisualEffectBackground: NSViewRepresentable {
+    var material: NSVisualEffectView.Material = .hudWindow
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = material
+        view.blendingMode = .behindWindow
+        view.state = .active
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        nsView.material = material
+    }
+}
+
+extension View {
+    @ViewBuilder
+    func floatingSurface(cornerRadius: CGFloat) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        if #available(macOS 26, *) {
+            glassEffect(.regular, in: shape)
+        } else {
+            background(VisualEffectBackground().clipShape(shape))
+                .overlay(shape.strokeBorder(.white.opacity(0.12), lineWidth: 0.5))
+        }
+    }
+}

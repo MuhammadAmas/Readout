@@ -75,6 +75,15 @@ final class AppModel: ObservableObject {
         queue.skip(by: offset)
     }
 
+    func jump(to index: Int) {
+        queue.jump(to: index)
+    }
+
+    func showMiniPlayer() {
+        guard queue.isActive else { return }
+        miniPlayer.show()
+    }
+
     func setRate(_ rate: Double) {
         UserDefaults.standard.set(rate, forKey: Preferences.speechRate)
         applyLiveSettings()
@@ -116,6 +125,21 @@ final class AppModel: ObservableObject {
 
     func showSettings() {
         SettingsWindowController.shared.show(model: self)
+    }
+
+    func showAbout() {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        let credits = NSAttributedString(
+            string: "Reads selected text aloud, entirely on this Mac.\nNo network requests, no analytics.\n\nNeural voices by Kokoro, run with sherpa-onnx.",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+                .foregroundColor: NSColor.secondaryLabelColor,
+                .paragraphStyle: paragraph,
+            ]
+        )
+        NSApp.activate()
+        NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])
     }
 
     func refreshTrust() {

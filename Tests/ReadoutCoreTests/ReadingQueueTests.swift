@@ -112,6 +112,28 @@ struct ReadingQueueTests {
         #expect(queue.state == .idle)
     }
 
+    @Test func jumpRestartsAtTheChosenSentence() {
+        let engine = FakeEngine()
+        let queue = ReadingQueue(engine: engine)
+        queue.start(sentences, settings: SpeechVoiceSettings())
+        queue.pause()
+        queue.jump(to: 2)
+        #expect(queue.currentIndex == 2)
+        #expect(queue.state == .speaking)
+        #expect(engine.spoken.suffix(2).map(\.text) == ["Three.", "Four."])
+    }
+
+    @Test func jumpOutOfRangeOrWhileIdleDoesNothing() {
+        let engine = FakeEngine()
+        let queue = ReadingQueue(engine: engine)
+        queue.jump(to: 1)
+        #expect(queue.state == .idle)
+        queue.start(sentences, settings: SpeechVoiceSettings())
+        let spoken = engine.spoken.count
+        queue.jump(to: 9)
+        #expect(engine.spoken.count == spoken)
+    }
+
     @Test func pauseAndResume() {
         let engine = FakeEngine()
         let queue = ReadingQueue(engine: engine)

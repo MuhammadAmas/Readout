@@ -21,9 +21,8 @@ rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$binaries/Readout" "$app/Contents/MacOS/Readout"
 cp Resources/Info.plist "$app/Contents/Info.plist"
-if [[ -f Resources/AppIcon.icns ]]; then
-    cp Resources/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
-fi
+cp Resources/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
+cp scripts/fetch-neural-voice.sh "$app/Contents/Resources/fetch-neural-voice.sh"
 codesign --force --sign "$identity" --identifier dev.readout.Readout "$app"
 if [[ "$identity" == "-" ]]; then
     echo "Built $app (ad-hoc signed: Accessibility access resets on every rebuild; run scripts/create-signing-identity.sh to fix)"

@@ -131,7 +131,7 @@ final class AppModel: ObservableObject {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center
         let credits = NSAttributedString(
-            string: "Reads selected text aloud, entirely on this Mac.\nNo network requests, no analytics.\n\nNeural voices by Kokoro, run with sherpa-onnx.",
+            string: "Reads selected text aloud, entirely on this Mac.\nNothing you read ever leaves it. No analytics.\n\nNeural voices by Kokoro, run with sherpa-onnx.",
             attributes: [
                 .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
                 .foregroundColor: NSColor.secondaryLabelColor,

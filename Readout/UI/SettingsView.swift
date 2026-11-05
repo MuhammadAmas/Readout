@@ -94,6 +94,15 @@ private extension View {
 private struct GeneralSettings: View {
     @ObservedObject var model: AppModel
     @AppStorage(Preferences.showMiniPlayer) private var showMiniPlayer = Preferences.Defaults.showMiniPlayer
+    @AppStorage(Preferences.automaticUpdates) private var automaticUpdates = Preferences.Defaults.automaticUpdates
+
+    private var updateDetail: String {
+        let version = "Version \(Updater.shared.currentVersion)."
+        guard Updater.shared.canReplaceItself else {
+            return "\(version) Only a copy installed in Applications can update itself."
+        }
+        return "\(version) New versions install by themselves when Readout isn't reading."
+    }
 
     var body: some View {
         Form {
@@ -109,6 +118,10 @@ private struct GeneralSettings: View {
             Section {
                 Toggle("Show mini player while reading", isOn: $showMiniPlayer)
                 LaunchAtLogin.Toggle("Open at login")
+                Toggle(isOn: $automaticUpdates) {
+                    Text("Update automatically")
+                    Text(updateDetail)
+                }
             }
 
             Section {
@@ -131,7 +144,7 @@ private struct GeneralSettings: View {
                     }
                 }
             } footer: {
-                Text("Readout works entirely on this Mac. It makes no network requests, collects no analytics and keeps nothing it reads.")
+                Text("Everything Readout reads stays on this Mac. Its only network request is a check of GitHub for a new version, which sends nothing about you or what you read. No analytics.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.leading)

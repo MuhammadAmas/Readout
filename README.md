@@ -4,8 +4,9 @@ Readout is a macOS menu bar app that reads selected text aloud. Select text in a
 press **⌃⌥R**, and it starts speaking. Press **⌃⌥R** again to stop, or **⌃⌥P** to pause and
 resume.
 
-It runs entirely on your Mac. It makes no network requests, collects no analytics, and keeps no
-record of what it reads. Speech comes from the system's offline voices (`AVSpeechSynthesizer`),
+It runs entirely on your Mac. Nothing it reads ever leaves the Mac, it collects no analytics, and it
+keeps no record of what it reads. Its only network request is a check of GitHub for a new version
+(see [Updates](#updates)). Speech comes from the system's offline voices (`AVSpeechSynthesizer`),
 or from optional [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M) neural voices that also run
 on your Mac.
 
@@ -35,9 +36,28 @@ curl -fsSL https://raw.githubusercontent.com/MuhammadAmas/Readout/main/install.s
 ```
 
 The installer downloads the latest release, checks its SHA-256, copies `Readout.app` to
-`/Applications` (or `~/Applications` if that isn't writable), and opens it. Running it again
-updates Readout in place and keeps your settings and Accessibility access. On an Intel Mac, build
+`/Applications` (or `~/Applications` if that isn't writable), and opens it. On an Intel Mac, build
 from source instead (below).
+
+## Updates
+
+Readout updates itself; there's nothing to click. About a minute after launch and then every six
+hours, it asks GitHub for the latest release. If that release is newer, Readout:
+
+1. downloads `Readout.zip` and checks it against `Readout.zip.sha256`,
+2. checks that the new app has the same bundle identifier and version as the release, and that
+   it's signed by the same certificate as the running copy (its designated requirement), so a
+   tampered download is rejected even if its checksum was replaced too,
+3. waits until it isn't reading, replaces itself, relaunches, and shows "Readout updated to …".
+
+Settings, shortcuts, voices and Accessibility access all carry over. The request sends nothing
+but a `Readout/<version>` user agent. You can turn this off under **Settings › General › Update
+automatically**. Only a copy installed in `/Applications` or `~/Applications` updates itself, so a
+development build in `build/` never replaces itself with a release. Running the install command
+again also updates Readout.
+
+Readout 1.0.0 predates the updater, so a 1.0.0 install needs the install command run once more to
+get 1.1.0. After that it stays current by itself.
 
 ## Build from source
 
@@ -58,7 +78,9 @@ make icon       # redraws Resources/AppIcon.icns from scripts/make-icon.swift
 
 To publish a release, bump `CFBundleShortVersionString` in `Resources/Info.plist`, run
 `make release`, then run the `gh release create` command it prints. `install.sh` always installs
-the latest release.
+the latest release, and installed copies pick it up within six hours. Sign every release with the
+same certificate (`scripts/create-signing-identity.sh`): installed copies refuse updates signed by
+anything else.
 
 The project is a Swift package. `Package.swift` is the project file, and you can open it
 directly in Xcode (**File › Open…** or `open Package.swift`). Use the `Readout` scheme to build
@@ -155,8 +177,7 @@ k2-fsa/sherpa-onnx GitHub releases. It checks each file's SHA-256, then installs
 | `sherpa-onnx-v1.13.8-osx-universal2-shared-lib.tar.bz2` | 18 MB | the runtime: sherpa-onnx and ONNX Runtime libraries |
 | `kokoro-multi-lang-v1_0.tar.bz2` | 334 MB | the Kokoro v1.0 model, voices, lexicons and espeak-ng data |
 
-The script is the only part of Readout that uses the network. The app never downloads anything.
-It looks for the files at launch and loads the runtime with `dlopen`, so Readout builds and runs
+The app never downloads the voices itself; the script does. Readout looks for the files at launch and loads the runtime with `dlopen`, so Readout builds and runs
 the same with or without them.
 
 Once installed, **Settings › Voice** lists 27 English neural voices under English (US) and
@@ -242,6 +263,8 @@ open build/Readout.app --args --read "Text to speak now"    # reads the given te
 open build/Readout.app --args --settings                    # opens Settings on launch
 open build/Readout.app --args --onboarding                  # opens the welcome window on launch
 READOUT_RELEASE_URL="file://$PWD/dist" bash install.sh      # tests the installer against make release output
+READOUT_UPDATE_FEED="file:///path/latest.json" /Applications/Readout.app/Contents/MacOS/Readout
+                                                            # tests self-update against a local copy of GitHub's release JSON
 ```
 
 ## Known limitations

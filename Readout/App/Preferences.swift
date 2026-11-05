@@ -9,6 +9,7 @@ enum Preferences {
     static let skipCodeBlocks = "skipCodeBlocks"
     static let showMiniPlayer = "showMiniPlayer"
     static let hasCompletedOnboarding = "hasCompletedOnboarding"
+    static let automaticUpdates = "automaticUpdates"
 
     enum Defaults {
         static let voiceIdentifier = ""
@@ -17,6 +18,7 @@ enum Preferences {
         static let cleanupEnabled = true
         static let skipCodeBlocks = true
         static let showMiniPlayer = true
+        static let automaticUpdates = true
     }
 
     static let rateSteps: [Double] = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
@@ -29,6 +31,7 @@ enum Preferences {
             cleanupEnabled: Defaults.cleanupEnabled,
             skipCodeBlocks: Defaults.skipCodeBlocks,
             showMiniPlayer: Defaults.showMiniPlayer,
+            automaticUpdates: Defaults.automaticUpdates,
             hasCompletedOnboarding: false,
         ])
     }

@@ -38,6 +38,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let index = arguments.firstIndex(of: "--read"), arguments.indices.contains(index + 1) {
             model.read(arguments[index + 1])
         }
+        if arguments.contains(Updater.relaunchArgument) {
+            model.hud.show("Readout updated to \(Updater.shared.currentVersion)", symbol: "arrow.down.circle.fill")
+        }
+        Updater.shared.start()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

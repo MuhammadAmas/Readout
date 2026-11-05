@@ -40,6 +40,12 @@ final class NeuralSpeechEngine: SpeechEngine {
     private var pausedAt: Date?
     private var highlightTimer: Timer?
     private var idleWork: DispatchWorkItem?
+    private let audioQueue = DispatchQueue(label: "dev.readout.audio", qos: .userInitiated)
+    private let audioTimeout: TimeInterval = 4
+    private var isAudioReady = false
+    private var isStartingAudio = false
+    private var audioSetup = 0
+    private var waitingForAudio: [(Bool) -> Void] = []
 
     init() {
         engine.attach(player)
@@ -49,7 +55,13 @@ final class NeuralSpeechEngine: SpeechEngine {
 
     func prepare(_ voice: KokoroVoice) {
         worker.preload(voice.accent)
+        withAudio(sampleRate: Self.kokoroSampleRate) { [weak self] _ in
+            guard let self, self.items.isEmpty else { return }
+            self.scheduleIdle()
+        }
     }
+
+    private static let kokoroSampleRate: Double = 24_000
 
     func speak(_ request: SpeechRequest) {
         guard let voice = request.settings.voiceIdentifier.flatMap(KokoroVoice.voice(identifier:)) else { return }
@@ -109,14 +121,29 @@ final class NeuralSpeechEngine: SpeechEngine {
 
     private func deliver(_ samples: [Float]?, sampleRate: Double, piece: Int, of item: Item, generation: Int) {
         guard generation == self.generation, items.contains(where: { $0 === item }) else { return }
-        guard let samples, !samples.isEmpty, let buffer = makeBuffer(samples, sampleRate: sampleRate), startEngine(sampleRate: sampleRate) else {
+        guard let samples, !samples.isEmpty, let buffer = makeBuffer(samples, sampleRate: sampleRate) else {
             Log.speech.error("Kokoro produced no audio for a sentence; skipping it")
-            item.scheduled += 1
-            item.played += 1
-            if item.isComplete { finish(item) }
+            skip(piece: piece, of: item)
             return
         }
-        item.durations[piece] = Double(samples.count) / sampleRate
+        withAudio(sampleRate: sampleRate) { [weak self] ready in
+            guard let self, generation == self.generation, self.items.contains(where: { $0 === item }) else { return }
+            guard ready else {
+                self.skip(piece: piece, of: item)
+                return
+            }
+            self.schedule(buffer, duration: Double(samples.count) / sampleRate, piece: piece, of: item, generation: generation)
+        }
+    }
+
+    private func skip(piece: Int, of item: Item) {
+        item.scheduled += 1
+        item.played += 1
+        if item.isComplete { finish(item) }
+    }
+
+    private func schedule(_ buffer: AVAudioPCMBuffer, duration: TimeInterval, piece: Int, of item: Item, generation: Int) {
+        item.durations[piece] = duration
         item.scheduled += 1
         player.volume = item.request.settings.volume
         let wasIdle = playhead == nil
@@ -205,31 +232,67 @@ final class NeuralSpeechEngine: SpeechEngine {
         return buffer
     }
 
-    private func startEngine(sampleRate: Double) -> Bool {
+    private func withAudio(sampleRate: Double, _ work: @escaping (Bool) -> Void) {
         idleWork?.cancel()
-        if format?.sampleRate != sampleRate {
+        if isAudioReady, format?.sampleRate == sampleRate, engine.isRunning {
+            work(true)
+            return
+        }
+        waitingForAudio.append(work)
+        guard !isStartingAudio else { return }
+        isStartingAudio = true
+        audioSetup += 1
+        let setup = audioSetup
+        let engine = engine
+        let player = player
+        audioQueue.async { [weak self] in
             let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)
             engine.disconnectNodeOutput(player)
             engine.connect(player, to: engine.mainMixerNode, format: format)
-            self.format = format
+            var started = engine.isRunning
+            if !started {
+                engine.prepare()
+                do {
+                    try engine.start()
+                    started = true
+                } catch {
+                    Log.speech.error("Audio engine failed to start: \(error.localizedDescription, privacy: .public)")
+                }
+            }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self, setup == self.audioSetup else { return }
+                    self.format = format
+                    self.finishAudioSetup(ready: started)
+                }
+            }
         }
-        guard !engine.isRunning else { return true }
-        do {
-            engine.prepare()
-            try engine.start()
-            return true
-        } catch {
-            Log.speech.error("Audio engine failed to start: \(error.localizedDescription, privacy: .public)")
-            return false
+        DispatchQueue.main.asyncAfter(deadline: .now() + audioTimeout) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, setup == self.audioSetup, self.isStartingAudio else { return }
+                Log.speech.error("macOS audio didn't respond within \(Int(self.audioTimeout), privacy: .public) s; skipping neural audio")
+                self.audioSetup += 1
+                self.finishAudioSetup(ready: false)
+            }
         }
+    }
+
+    private func finishAudioSetup(ready: Bool) {
+        isStartingAudio = false
+        isAudioReady = ready
+        let waiting = waitingForAudio
+        waitingForAudio.removeAll()
+        waiting.forEach { $0(ready) }
     }
 
     private func scheduleIdle() {
         idleWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {
-                guard let self, self.items.isEmpty else { return }
-                self.engine.pause()
+                guard let self, self.items.isEmpty, !self.isStartingAudio else { return }
+                self.isAudioReady = false
+                let engine = self.engine
+                self.audioQueue.async { engine.pause() }
             }
         }
         idleWork = work

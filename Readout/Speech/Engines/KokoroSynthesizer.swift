@@ -165,9 +165,29 @@ final class KokoroWorker: @unchecked Sendable {
     private let idleUnloadDelay: TimeInterval = 15 * 60
     private var synthesizer: KokoroSynthesizer?
     private var unloadWork: DispatchWorkItem?
+    private let stateLock = NSLock()
+    private var isShuttingDown = false
+
+    private var acceptsWork: Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return !isShuttingDown
+    }
+
+    func shutDown(timeout: TimeInterval) {
+        stateLock.lock()
+        isShuttingDown = true
+        stateLock.unlock()
+        let idle = DispatchSemaphore(value: 0)
+        queue.async { idle.signal() }
+        if idle.wait(timeout: .now() + timeout) == .timedOut {
+            Log.speech.error("Kokoro was still busy \(Int(timeout), privacy: .public) s after quitting began")
+        }
+    }
 
     func preload(_ accent: KokoroVoice.Accent) {
         queue.async {
+            guard self.acceptsWork else { return }
             _ = self.loadedSynthesizer(for: accent)
             self.scheduleUnload()
         }
@@ -181,14 +201,14 @@ final class KokoroWorker: @unchecked Sendable {
         deliver: @escaping @Sendable (_ index: Int, _ samples: [Float]?, _ sampleRate: Double) -> Void
     ) {
         queue.async {
-            guard !token.isCancelled else { return }
+            guard !token.isCancelled, self.acceptsWork else { return }
             self.unloadWork?.cancel()
             guard let synthesizer = self.loadedSynthesizer(for: voice.accent) else {
                 for index in pieces.indices { deliver(index, nil, 24_000) }
                 return
             }
             for (index, piece) in pieces.enumerated() {
-                guard !token.isCancelled else { return }
+                guard !token.isCancelled, self.acceptsWork else { return }
                 let started = Date()
                 let samples = synthesizer.synthesize(piece, speakerID: voice.speakerID, speed: speed, cancel: token)
                 guard !token.isCancelled else { return }

@@ -85,6 +85,7 @@ enum SelfTest {
             if let index = arguments.firstIndex(of: "--report"), arguments.indices.contains(index + 1) {
                 try? (report + "\n").write(toFile: arguments[index + 1], atomically: true, encoding: .utf8)
             }
+            KokoroWorker.shared.shutDown(timeout: 3)
             exit(failed == 0 ? 0 : 1)
         }
     }

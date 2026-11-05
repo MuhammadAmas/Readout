@@ -16,12 +16,34 @@ on your Mac.
   skipped, links are shortened to their domain, and symbols are spoken as words.
 - Splits text into sentences and queues them, so even very long selections start speaking
   immediately and stop instantly.
-- A floating mini player shows the sentence being read, highlights the current word, and has
-  controls for back, play/pause, stop, forward and speed.
+- A floating mini player (Liquid Glass on macOS 26 and later) fills in each word as it's spoken,
+  shows how far through the selection you are on a track you can click to jump, and has controls
+  for back, play/pause, forward, stop and speed.
 
-Requires macOS 14 or later and Swift 5.9 or later.
+## Install
 
-## Build and run
+On a Mac with Apple silicon running macOS 14 or later:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MuhammadAmas/Readout/main/install.sh | bash
+```
+
+To include the natural-sounding Kokoro neural voices (a one-time 360 MB download):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MuhammadAmas/Readout/main/install.sh | bash -s -- --with-neural-voice
+```
+
+The installer downloads the latest release, checks its SHA-256, copies `Readout.app` to
+`/Applications` (or `~/Applications` if that isn't writable), and opens it. Running it again
+updates Readout in place and keeps your settings and Accessibility access. On an Intel Mac, build
+from source instead (below).
+
+## Build from source
+
+Requires macOS 14 or later and Swift 5.9 or later (the Command Line Tools are enough).
+
+
 
 ```bash
 make app        # builds build/Readout.app (release, ad-hoc signed)
@@ -30,7 +52,13 @@ make install    # builds and copies it to /Applications
 make test       # unit tests: clean-up, sentence splitter, reading queue
 make selftest   # timing and clipboard checks against the real speech engines
 make neural-voice  # one-time download of the optional Kokoro neural voices (about 360 MB)
+make release    # builds and zips dist/Readout.zip with its SHA-256 for a GitHub release
+make icon       # redraws Resources/AppIcon.icns from scripts/make-icon.swift
 ```
+
+To publish a release, bump `CFBundleShortVersionString` in `Resources/Info.plist`, run
+`make release`, then run the `gh release create` command it prints. `install.sh` always installs
+the latest release.
 
 The project is a Swift package. `Package.swift` is the project file, and you can open it
 directly in Xcode (**File › Open…** or `open Package.swift`). Use the `Readout` scheme to build
@@ -212,6 +240,8 @@ build/Readout.app/Contents/MacOS/Readout --self-test        # prints PASS/FAIL t
 open -W build/Readout.app --args --self-test --report /tmp/readout.txt  # same, as a normal launch
 open build/Readout.app --args --read "Text to speak now"    # reads the given text on launch
 open build/Readout.app --args --settings                    # opens Settings on launch
+open build/Readout.app --args --onboarding                  # opens the welcome window on launch
+READOUT_RELEASE_URL="file://$PWD/dist" bash install.sh      # tests the installer against make release output
 ```
 
 ## Known limitations

@@ -7,6 +7,9 @@ enum Preferences {
     static let matchTextLanguage = "matchTextLanguage"
     static let cleanupEnabled = "cleanupEnabled"
     static let skipCodeBlocks = "skipCodeBlocks"
+    static let codeBlockMode = "codeBlockMode"
+    static let technicalSpeech = "technicalSpeech"
+    static let pronunciations = "pronunciations"
     static let showMiniPlayer = "showMiniPlayer"
     static let hasCompletedOnboarding = "hasCompletedOnboarding"
     static let automaticUpdates = "automaticUpdates"
@@ -16,7 +19,8 @@ enum Preferences {
         static let speechRate = 1.0
         static let matchTextLanguage = true
         static let cleanupEnabled = true
-        static let skipCodeBlocks = true
+        static let codeBlockMode = CodeBlockMode.skip.rawValue
+        static let technicalSpeech = true
         static let showMiniPlayer = true
         static let automaticUpdates = true
     }
@@ -24,12 +28,15 @@ enum Preferences {
     static let rateSteps: [Double] = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
 
     static func register() {
+        let legacySkip = UserDefaults.standard.object(forKey: skipCodeBlocks) as? Bool
+        let codeBlocks = legacySkip == false ? CodeBlockMode.read.rawValue : Defaults.codeBlockMode
         UserDefaults.standard.register(defaults: [
             voiceIdentifier: Defaults.voiceIdentifier,
             speechRate: Defaults.speechRate,
             matchTextLanguage: Defaults.matchTextLanguage,
             cleanupEnabled: Defaults.cleanupEnabled,
-            skipCodeBlocks: Defaults.skipCodeBlocks,
+            codeBlockMode: codeBlocks,
+            technicalSpeech: Defaults.technicalSpeech,
             showMiniPlayer: Defaults.showMiniPlayer,
             automaticUpdates: Defaults.automaticUpdates,
             hasCompletedOnboarding: false,
@@ -40,8 +47,20 @@ enum Preferences {
         let defaults = UserDefaults.standard
         return CleanupOptions(
             isEnabled: defaults.bool(forKey: cleanupEnabled),
-            skipsCodeBlocks: defaults.bool(forKey: skipCodeBlocks)
+            codeBlocks: defaults.string(forKey: codeBlockMode).flatMap(CodeBlockMode.init(rawValue:)) ?? .skip,
+            speaksTechnicalTerms: defaults.bool(forKey: technicalSpeech),
+            pronunciations: savedPronunciations
         )
+    }
+
+    static var savedPronunciations: [Pronunciation] {
+        guard let data = UserDefaults.standard.data(forKey: pronunciations) else { return [] }
+        return (try? JSONDecoder().decode([Pronunciation].self, from: data)) ?? []
+    }
+
+    static func save(pronunciations entries: [Pronunciation]) {
+        let data = try? JSONEncoder().encode(entries)
+        UserDefaults.standard.set(data, forKey: pronunciations)
     }
 
     static var rate: Double {

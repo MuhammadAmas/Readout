@@ -22,12 +22,14 @@ struct MarkdownSymbolTests {
         #expect(TextCleaner.clean("***very*** important") == "very important")
     }
 
-    @Test func underscoresInsideIdentifiersSurvive() {
-        #expect(TextCleaner.clean("Call snake_case_name now") == "Call snake_case_name now")
+    @Test func underscoresInsideIdentifiersSurviveEmphasisStripping() {
+        #expect(TextCleaner.clean("Call snake_case_name now", options: CleanupOptions(speaksTechnicalTerms: false)) == "Call snake_case_name now")
+        #expect(TextCleaner.clean("Call snake_case_name now") == "Call snake case name now")
     }
 
     @Test func inlineCodeKeepsItsContent() {
-        #expect(TextCleaner.clean("Run `swift build` then ``a `b` c``") == "Run swift build then a `b` c")
+        #expect(TextCleaner.clean("Run `swift build` then ``a `b` c``", options: CleanupOptions(speaksTechnicalTerms: false)) == "Run swift build then a `b` c")
+        #expect(TextCleaner.clean("Run `swift build` then ``a `b` c``") == "Run swift build then a b c")
     }
 
     @Test func tripleBackticksOnOneLineAreInlineCode() {
@@ -155,9 +157,21 @@ struct CodeBlockTests {
         #expect(TextCleaner.clean(sample) == "Intro\n\nCode block skipped.\n\nOutro")
     }
 
-    @Test func codeIsReadVerbatimWhenNotSkipped() {
-        let options = CleanupOptions(isEnabled: true, skipsCodeBlocks: false)
+    @Test func codeIsReadAloudWhenAsked() {
+        let options = CleanupOptions(isEnabled: true, codeBlocks: .read)
+        #expect(TextCleaner.clean(sample, options: options) == "Intro\n\nlet value equals a arrow b\n\nprint value\n\nOutro")
+    }
+
+    @Test func codeIsReadVerbatimWithoutTechnicalSpeech() {
+        let options = CleanupOptions(isEnabled: true, codeBlocks: .read, speaksTechnicalTerms: false)
         #expect(TextCleaner.clean(sample, options: options) == "Intro\n\nlet value = a -> b\n\nprint(**value**)\n\nOutro")
+    }
+
+    @Test func codeBlocksCanBeDescribed() {
+        let options = CleanupOptions(codeBlocks: .describe)
+        #expect(TextCleaner.clean(sample, options: options) == "Intro\n\nSwift code block, 2 lines, skipped.\n\nOutro")
+        #expect(TextCleaner.clean("```\none\n```", options: options) == "Code block, 1 line, skipped.")
+        #expect(TextCleaner.clean("```py title=x\na\n\nb\n```", options: options) == "Python code block, 2 lines, skipped.")
     }
 
     @Test func tildeFencesAndLongerFences() {
@@ -176,8 +190,8 @@ struct CodeBlockTests {
 
     @Test func tableSyntaxInsideCodeIsNotATable() {
         let input = "```\n| a | b |\n|---|---|\n```"
-        let options = CleanupOptions(isEnabled: true, skipsCodeBlocks: false)
-        #expect(TextCleaner.clean(input, options: options) == "| a | b |\n\n|---|---|")
+        let options = CleanupOptions(isEnabled: true, codeBlocks: .read)
+        #expect(TextCleaner.clean(input, options: options) == "a pipe b")
     }
 }
 
@@ -189,7 +203,7 @@ struct URLTests {
 
     @Test func trailingPunctuationIsKept() {
         #expect(TextCleaner.clean("Visit https://github.com/apple/swift.") == "Visit github.com.")
-        #expect(TextCleaner.clean("Is it http://localhost:8080/x?") == "Is it localhost?")
+        #expect(TextCleaner.clean("Is it http://localhost:8080/x?") == "Is it local host?")
     }
 
     @Test func wwwWithoutScheme() {
@@ -233,11 +247,12 @@ struct SymbolTests {
         #expect(TextCleaner.clean("Bring snacks, drinks, etc. Then go.") == "Bring snacks, drinks, et cetera. Then go.")
         #expect(TextCleaner.clean("Apples, pears, etc., are fruit") == "Apples, pears, et cetera, are fruit")
         #expect(TextCleaner.clean("And so on etc.") == "And so on et cetera.")
-        #expect(TextCleaner.clean("Mac vs. PC") == "Mac versus PC")
+        #expect(TextCleaner.clean("Mac vs. PC") == "Mac versus P C")
     }
 
-    @Test func hashesBeforeNumbersAreDropped() {
-        #expect(TextCleaner.clean("Issue #42 in C#") == "Issue 42 in C#")
+    @Test func hashesBeforeNumbers() {
+        #expect(TextCleaner.clean("Issue #42 in C#", options: CleanupOptions(speaksTechnicalTerms: false)) == "Issue 42 in C#")
+        #expect(TextCleaner.clean("Issue #42 in C#") == "Issue number 42 in C sharp")
     }
 }
 
@@ -293,7 +308,7 @@ struct WrappingTests {
 
         Fixes, for example login.
 
-        Platform: macOS, Status: Shipped.
+        Platform: mac O S, Status: Shipped.
 
         Code block skipped.
 

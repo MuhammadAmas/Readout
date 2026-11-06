@@ -15,8 +15,9 @@ close to a real person. Everything runs on your Mac.
   your clipboard back exactly as it was.
 - **Starts at once, stops at once.** Long selections start speaking almost immediately, and
   pressing ⌃⌥R again stops within milliseconds.
-- **Reads Markdown properly.** Tables become sentences, code blocks are skipped, and links are
-  read as their domain instead of as symbols.
+- **Reads technical text properly.** Code inside a sentence is spoken as words (`getUserName()`
+  becomes "get user name", `--force` "dash dash force"), terms like JSON, nginx and C# are said the
+  way people say them, tables become sentences, and links are read as their domain.
 - **A mini player you can steer.** Words fill in as they're spoken. Click the progress track to
   jump, skip a sentence back or forward, and change the speed without losing your place.
 - **Private.** Nothing you read leaves your Mac. The only network request is a check for updates.
@@ -135,17 +136,47 @@ exactly what will be said.
 
 | You select | Readout says |
 | --- | --- |
-| `# Heading`, `**bold**`, `*italic*`, `` `code` ``, `> quote`, `- item` | the words, without the symbols |
+| `# Heading`, `**bold**`, `*italic*`, `> quote`, `- item` | the words, without the symbols |
 | A Markdown table | one sentence per row: "Name: Alice, Age: 30." |
-| A fenced code block | "Code block skipped." (or the code itself, if you turn skipping off) |
 | `https://www.example.com/a/b?c=d` | "example.com" |
 | `[the docs](https://…)` | "the docs" |
 | `&`, `->`, `→` | "and", "to", "to" |
 | `e.g.`, `i.e.`, `etc.`, `vs.` | "for example", "that is", "et cetera", "versus" |
 | A line break in the middle of a sentence (common in PDFs) | one sentence, with split words such as "infor-mation" rejoined |
 
+### Code and technical terms
+
+With **Make code and technical terms speakable** on (the default), code and jargon inside ordinary
+text are turned into words before the voice sees them, whether or not they're in backticks:
+
+| You select | Readout says |
+| --- | --- |
+| `getUserName()`, `user_id`, `MAX_RETRIES`, `OpenTelemetry` | "get user name", "user id", "max retries", "Open Telemetry" |
+| `a != b`, `x == y`, `count >= 10 && ready` | "a not equal to b", "x equals y", "count is greater than or equal to 10 and ready" |
+| `git push --force`, `ls -la` | "git push dash dash force", "ls dash la" |
+| `src/app/main.ts`, `.env`, `~/Library` | "src slash app slash main dot T S", "dot env", "home slash Library" |
+| `v1.2.3`, `#4512` | "version 1.2.3", "number 4512" |
+| `JSON`, `nginx`, `kubectl`, `C#`, `Node.js`, `macOS` | "Jason", "engine x", "kube control", "C sharp", "node J S", "mac O S" |
+| `HTTPS`, `CSS`, `PDFs` (letters with no vowels) | "H T T P S", "C S S", "P D Fs" |
+
+Ordinary writing is left alone: "Dr. Smith met the CEO at 5 p.m. on Wi-Fi", "24/7", "and/or",
+"well-known" and all-caps sentences come through unchanged. Turn the switch off to hear code
+exactly as written.
+
+**Code blocks** (fenced with ```` ``` ````) have three options under **Code blocks**:
+
+- **Skip, saying "Code block skipped"** (the default).
+- **Skip, saying its language and length**, for example "Swift code block, 12 lines, skipped."
+- **Read the code aloud**, line by line with the same rules: `if user.isAdmin && !user.isBlocked`
+  becomes "if user dot is admin and not user dot is blocked", and `// Load the user` becomes
+  "comment, Load the user". Lines made only of symbols are skipped.
+
+**Pronunciations** fix names and terms Readout gets wrong. Add a row such as *Acasia → uh kay sha*.
+Matching ignores capitals, replaces only whole words, works inside code too, and takes priority
+over the built-in dictionary.
+
 <p align="center">
-  <img src="docs/screenshots/settings-text.png" width="430" alt="Readout Settings, Text pane: clean-up switches and a Try it box showing a Markdown sample and what Readout will say">
+  <img src="docs/screenshots/settings-text.png" width="430" alt="Readout Settings, Text pane: the clean-up switches, the Code blocks picker, the Pronunciations list, and a Try it box turning technical notes into speech">
 </p>
 
 ## Updates
@@ -226,6 +257,8 @@ Readout from the Accessibility list in System Settings with **−**.
   by your chosen voice, which can't pronounce it. Neural voices are English only.
 - **Neural voices use memory:** about 680 MB while loaded. Readout loads them at launch and releases
   them after 15 minutes without reading.
+- **The technical-term rules are written for English.** The built-in dictionary and spellings
+  assume English; add **Pronunciations** for anything else.
 - **The neural word highlight is estimated** from playback time, so it can be a word ahead or
   behind. System voices report exact word timings.
 - **Apple silicon only** for the prebuilt app. The app isn't notarized by Apple: installing with the
@@ -250,7 +283,7 @@ make install                         # build and copy Readout.app to /Applicatio
 | Command | What it does |
 | --- | --- |
 | `make build` | debug build with SwiftPM |
-| `make test` | unit tests: text clean-up, sentence splitting, language detection, reading queue |
+| `make test` | unit tests: text clean-up, technical speech, sentence splitting, language detection, reading queue |
 | `make app` | release build, wrapped as `build/Readout.app` and signed |
 | `make run` | `make app`, then open it |
 | `make install` | `make app`, then copy it to `/Applications` |
@@ -312,7 +345,7 @@ Readout/
   Speech/Core/      SpeechEngine protocol, ReadingQueue, SentenceSplitter, LanguageDetector
   Speech/Engines/   system voices, Kokoro neural voices, the router between them, voice catalogue
   Speech/CSherpaOnnx/ the sherpa-onnx v1.13.8 C header (types only; the library is loaded at runtime)
-  TextCleanup/      Markdown, table, code, URL and symbol clean-up
+  TextCleanup/      Markdown, table, URL and symbol clean-up, and technical speech (code, jargon, pronunciations)
   UI/               menu, settings, onboarding, mini player, HUD
 Tests/              unit tests for the ReadoutCore target
 Resources/          Info.plist and the app icon

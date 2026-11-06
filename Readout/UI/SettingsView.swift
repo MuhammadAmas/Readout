@@ -288,31 +288,78 @@ private struct VoiceSettings: View {
 
 private struct TextSettings: View {
     @AppStorage(Preferences.cleanupEnabled) private var cleanupEnabled = Preferences.Defaults.cleanupEnabled
-    @AppStorage(Preferences.skipCodeBlocks) private var skipCodeBlocks = Preferences.Defaults.skipCodeBlocks
+    @AppStorage(Preferences.technicalSpeech) private var technicalSpeech = Preferences.Defaults.technicalSpeech
+    @AppStorage(Preferences.codeBlockMode) private var codeBlockMode = Preferences.Defaults.codeBlockMode
+    @State private var pronunciations: [EditablePronunciation] = Preferences.savedPronunciations.map(EditablePronunciation.init)
     @State private var sample = """
-    ## Pricing
-    | Plan | Price |
-    |------|-------|
-    | Pro  | $9    |
+    ## Deploy notes
+    Run `npm run build --prod`, then check `user_id != nil` in src/app/main.ts (see issue #4512).
 
-    See **https://example.com/pricing** & compare, e.g. yearly -> monthly.
+    | Service | Status |
+    |---------|--------|
+    | OpenTelemetry | Live |
 
-    ```js
-    console.log("hi")
+    ```swift
+    let user = try await api.fetchUser(id: userID)
     ```
     """
 
     var body: some View {
         Form {
             Section("Clean-up before speaking") {
-                Toggle("Clean up Markdown, links and symbols", isOn: $cleanupEnabled)
-                Toggle("Skip code blocks and say \u{201C}Code block skipped\u{201D}", isOn: $skipCodeBlocks)
-                    .disabled(!cleanupEnabled)
-                Text("Removes Markdown symbols (# * ` | >), reads tables as \u{201C}column: value\u{201D}, shortens links to their domain, and says & as \u{201C}and\u{201D}, -> as \u{201C}to\u{201D} and e.g. as \u{201C}for example\u{201D}.")
+                Toggle(isOn: $cleanupEnabled) {
+                    Text("Clean up Markdown, links and symbols")
+                    Text("Removes Markdown symbols, reads tables as \u{201C}column: value\u{201D}, shortens links to their domain, and says & as \u{201C}and\u{201D} and e.g. as \u{201C}for example\u{201D}.")
+                }
+                Toggle(isOn: $technicalSpeech) {
+                    Text("Make code and technical terms speakable")
+                    Text("Reads getUserName() as \u{201C}get user name\u{201D}, --force as \u{201C}dash dash force\u{201D}, != as \u{201C}not equal to\u{201D}, main.ts as \u{201C}main dot T S\u{201D}, and terms like JSON, nginx and C# the way people say them.")
+                }
+                .disabled(!cleanupEnabled)
+                Picker(selection: $codeBlockMode) {
+                    Text("Skip, saying \u{201C}Code block skipped\u{201D}").tag(CodeBlockMode.skip.rawValue)
+                    Text("Skip, saying its language and length").tag(CodeBlockMode.describe.rawValue)
+                    Text("Read the code aloud").tag(CodeBlockMode.read.rawValue)
+                } label: {
+                    Text("Code blocks")
+                }
+                .disabled(!cleanupEnabled)
+            }
+
+            Section {
+                ForEach($pronunciations) { $entry in
+                    HStack(spacing: 8) {
+                        TextField("Written", text: $entry.written)
+                            .textFieldStyle(.roundedBorder)
+                        Image(systemName: "arrow.right")
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                        TextField("Say as", text: $entry.spoken)
+                            .textFieldStyle(.roundedBorder)
+                        Button {
+                            pronunciations.removeAll { $0.id == entry.id }
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Remove")
+                        .accessibilityLabel("Remove \(entry.written)")
+                    }
+                }
+                Button("Add Pronunciation") {
+                    pronunciations.append(EditablePronunciation(Pronunciation(written: "", spoken: "")))
+                }
+            } header: {
+                Text("Pronunciations")
+            } footer: {
+                Text("Teach Readout names and terms it gets wrong, such as a product or a colleague's name. Matching ignores capitals and only replaces whole words.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .disabled(!cleanupEnabled)
 
             Section("Try it") {
                 TextEditor(text: $sample)
@@ -329,10 +376,31 @@ private struct TextSettings: View {
                 }
             }
         }
+        .onChange(of: pronunciations) { _, entries in
+            Preferences.save(pronunciations: entries.map(\.value))
+        }
     }
 
     private var spoken: String {
-        let options = CleanupOptions(isEnabled: cleanupEnabled, skipsCodeBlocks: skipCodeBlocks)
+        let options = CleanupOptions(
+            isEnabled: cleanupEnabled,
+            codeBlocks: CodeBlockMode(rawValue: codeBlockMode) ?? .skip,
+            speaksTechnicalTerms: technicalSpeech,
+            pronunciations: pronunciations.map(\.value)
+        )
         return SentenceSplitter.split(TextCleaner.clean(sample, options: options)).joined(separator: " ")
     }
+}
+
+private struct EditablePronunciation: Identifiable, Equatable {
+    let id = UUID()
+    var written: String
+    var spoken: String
+
+    init(_ pronunciation: Pronunciation) {
+        written = pronunciation.written
+        spoken = pronunciation.spoken
+    }
+
+    var value: Pronunciation { Pronunciation(written: written, spoken: spoken) }
 }

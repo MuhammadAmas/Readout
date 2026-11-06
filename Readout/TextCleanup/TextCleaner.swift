@@ -2,11 +2,20 @@ import Foundation
 
 public struct CleanupOptions: Equatable, Sendable {
     public var isEnabled: Bool
-    public var skipsCodeBlocks: Bool
+    public var codeBlocks: CodeBlockMode
+    public var speaksTechnicalTerms: Bool
+    public var pronunciations: [Pronunciation]
 
-    public init(isEnabled: Bool = true, skipsCodeBlocks: Bool = true) {
+    public init(
+        isEnabled: Bool = true,
+        codeBlocks: CodeBlockMode = .skip,
+        speaksTechnicalTerms: Bool = true,
+        pronunciations: [Pronunciation] = []
+    ) {
         self.isEnabled = isEnabled
-        self.skipsCodeBlocks = skipsCodeBlocks
+        self.codeBlocks = codeBlocks
+        self.speaksTechnicalTerms = speaksTechnicalTerms
+        self.pronunciations = pronunciations
     }
 }
 
@@ -19,13 +28,17 @@ public enum TextCleaner {
             .replacingOccurrences(of: "\r", with: "\n")
         guard options.isEnabled else { return normalized }
 
+        let speech = TechnicalSpeech(
+            speaksTechnicalTerms: options.speaksTechnicalTerms,
+            pronunciations: options.pronunciations
+        )
         let lines = normalized.components(separatedBy: "\n")
         var paragraphs: [String] = []
         var prose: [String] = []
         var index = 0
 
         func flushProse() {
-            paragraphs.append(contentsOf: ProseCleaner.paragraphs(from: prose))
+            paragraphs.append(contentsOf: ProseCleaner.paragraphs(from: prose, speech: speech))
             prose.removeAll()
         }
 
@@ -40,16 +53,20 @@ public enum TextCleaner {
                     index += 1
                 }
                 index += 1
-                if options.skipsCodeBlocks {
+                switch options.codeBlocks {
+                case .skip:
                     paragraphs.append(codeBlockNotice)
-                } else {
+                case .describe:
+                    paragraphs.append(TechnicalSpeech.describe(lines: body, language: fence.language))
+                case .read:
                     paragraphs.append(contentsOf: body
+                        .map { speech.codeLine($0) }
                         .map { $0.trimmingCharacters(in: .whitespaces) }
-                        .filter { !$0.isEmpty })
+                        .filter { $0.containsSpeakableCharacters })
                 }
                 continue
             }
-            if let table = MarkdownTable.parse(lines, at: index) {
+            if let table = MarkdownTable.parse(lines, at: index, speech: speech) {
                 flushProse()
                 paragraphs.append(contentsOf: table.sentences)
                 index = table.endIndex
@@ -66,6 +83,7 @@ public enum TextCleaner {
 struct CodeFence {
     let marker: Character
     let length: Int
+    let language: String?
 
     init?(openingLine line: String) {
         let trimmed = line.drop(while: { $0 == " " || $0 == "\t" })
@@ -75,6 +93,9 @@ struct CodeFence {
         if first == "`", trimmed.dropFirst(run).contains("`") { return nil }
         marker = first
         length = run
+        let info = trimmed.dropFirst(run).trimmingCharacters(in: .whitespaces)
+        let tag = info.split(whereSeparator: { $0 == " " || $0 == "{" || $0 == "," }).first.map(String.init)
+        language = tag?.isEmpty == false ? tag : nil
     }
 
     func isClosed(by line: String) -> Bool {
@@ -91,20 +112,20 @@ struct MarkdownTable {
 
     private static let delimiterRow = Pattern(#"^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$"#)
 
-    static func parse(_ lines: [String], at index: Int) -> MarkdownTable? {
+    static func parse(_ lines: [String], at index: Int, speech: TechnicalSpeech) -> MarkdownTable? {
         guard index + 1 < lines.count,
               lines[index].contains("|"),
               lines[index + 1].contains("|"),
               delimiterRow.matches(lines[index + 1])
         else { return nil }
 
-        let headers = cells(in: lines[index]).map(header)
+        let headers = cells(in: lines[index]).map { header($0, speech: speech) }
         var sentences: [String] = []
         var cursor = index + 2
         while cursor < lines.count {
             let line = lines[cursor]
             guard line.contains("|"), !line.trimmingCharacters(in: .whitespaces).isEmpty else { break }
-            if let sentence = sentence(headers: headers, values: cells(in: line).map(InlineCleaner.clean)) {
+            if let sentence = sentence(headers: headers, values: cells(in: line).map { InlineCleaner.clean($0, speech: speech) }) {
                 sentences.append(sentence)
             }
             cursor += 1
@@ -118,8 +139,8 @@ struct MarkdownTable {
         return MarkdownTable(sentences: sentences, endIndex: cursor)
     }
 
-    private static func header(_ cell: String) -> String {
-        var text = InlineCleaner.clean(cell)
+    private static func header(_ cell: String, speech: TechnicalSpeech) -> String {
+        var text = InlineCleaner.clean(cell, speech: speech)
         while text.hasSuffix(":") { text.removeLast() }
         return text.trimmingCharacters(in: .whitespaces)
     }
@@ -166,7 +187,7 @@ enum ProseCleaner {
     private static let numbered = Pattern(#"^(\d{1,3})[.)]\s+(.*)$"#)
     private static let rule = Pattern(#"^(?:(?:[-*_]\s*){3,}|=+)$"#)
 
-    static func paragraphs(from lines: [String]) -> [String] {
+    static func paragraphs(from lines: [String], speech: TechnicalSpeech) -> [String] {
         var output: [String] = []
         var buffer: [String] = []
         var bufferIsBlock = false
@@ -177,7 +198,7 @@ enum ProseCleaner {
                 bufferIsBlock = false
             }
             guard !buffer.isEmpty else { return }
-            let cleaned = InlineCleaner.clean(joinWrapped(buffer))
+            let cleaned = InlineCleaner.clean(joinWrapped(buffer), speech: speech)
             guard cleaned.containsSpeakableCharacters else { return }
             output.append(bufferIsBlock ? Punctuation.terminated(cleaned) : cleaned)
         }
@@ -274,7 +295,7 @@ enum InlineCleaner {
         ("&#39;", "'"), ("&apos;", "'"), ("&amp;", "&"),
     ]
 
-    static func clean(_ input: String) -> String {
+    static func clean(_ input: String, speech: TechnicalSpeech) -> String {
         var text = input
         text = escapes.replace(in: text, with: "$1")
         text = lineBreakTag.replace(in: text, with: " ")
@@ -286,13 +307,14 @@ enum InlineCleaner {
         for (entity, replacement) in entities {
             text = text.replacingOccurrences(of: entity, with: replacement)
         }
-        text = inlineCode.replace(in: text, with: "$2")
+        text = inlineCode.replace(in: text) { match in " " + speech.code(match[2] ?? "") + " " }
         text = bareURL.replace(in: text) { match in URLShortener.shorten(match[0] ?? "") }
         text = bold.replace(in: text, with: "$2")
         text = strike.replace(in: text, with: "$1")
         text = starItalic.replace(in: text, with: "$1")
         text = underscoreItalic.replace(in: text, with: "$1")
         text = strayStars.replace(in: text, with: "")
+        text = speech.prose(text)
         text = hashes.replace(in: text, with: "")
         text = pipes.replace(in: text, with: ", ")
         text = arrow.replace(in: text, with: " to ")
